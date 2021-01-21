@@ -20,7 +20,7 @@ class QueueManager(commands.Bot):
         print(f"Logged in as {self.user}")
 
     async def on_message(self, message: discord.Message):
-        # TODO: just ?questions channels
+        # TODO: just in ?questions channels
         if message.author.id == self.user.id:
             return  # The bot should not react to its own message
         if len(message.author.roles) != 1:
