@@ -79,6 +79,20 @@ class CommandsCog(commands.Cog):
         self.client.get_queue_channels(context.guild)
         await context.send(f"The roles that can manage queues are: {', '.join(context.message.content.split()[1:])}")
 
+    @commands.command(name='clear')
+    @commands.has_permissions(administrator=True)
+    async def clear_server_settings(self, context: Context):
+        """
+        Delete the configurations for this server.
+        @param context: The context of the command
+        @return:
+        """
+        cursor = self.client.dbconnection.cursor()
+        cursor.execute("DELETE FROM servers WHERE serverid = %s",
+                       (str(context.guild.id),))
+        self.client.dbconnection.commit()
+        await context.send("All configurations for this server are removed.")
+
     @commands.command(name='help')
     @commands.has_permissions(administrator=True)
     async def help_command(self, context: Context):
@@ -101,7 +115,8 @@ class CommandsCog(commands.Cog):
                               f"tag one or multiple channels: `{PREFIX}queue #channel` / `{PREFIX}queue #channel1 "
                               f"#channel2 ...`\n"
                               f"`{PREFIX}roles` → Declare roles as queue managers. You can tag one or multiple roles:\n"
-                              f"`{PREFIX}roles @Role` / `{PREFIX}roles @Role1 @Role2 ...`")
+                              f"`{PREFIX}roles @Role` / `{PREFIX}roles @Role1 @Role2 ...`\n"
+                              f"`{PREFIX}clear` → Clear all configurations for this server (reset).")
         embed.add_field(name="Queue management",
                         value="When a regular user sends a message in a queue channel, the bot wil reply with "
                               ":inbox_tray:. Consecutive messages by the same user (ignoring interruptions by "
