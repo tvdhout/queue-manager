@@ -48,7 +48,7 @@ class QueueManager(commands.Bot):
 
     async def on_ready(self):
         print(f"Logged in as {self.user}")
-        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="to ?help"))
+        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="?help"))
 
     async def archive(self, message: Message):
         """
