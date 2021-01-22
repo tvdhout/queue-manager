@@ -8,7 +8,7 @@ Type=simple
 Restart=always
 RestartSec=1
 User=thijs
-ExecStart=source /home/thijs/QueueManager/venv/bin/activate; python3 /home/thijs/QueueManager/QueueManager.py
+ExecStart=/home/thijs/QueueManager/run
 
 [Install]
 WantedBy=multi-user.target
