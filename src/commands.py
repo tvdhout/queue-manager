@@ -79,7 +79,7 @@ class CommandsCog(commands.Cog):
         self.client.get_queue_channels(context.guild)
         await context.send(f"The roles that can manage queues are: {', '.join(context.message.content.split()[1:])}")
 
-    @commands.command(name='clear')
+    @commands.command(name='reset')
     @commands.has_permissions(administrator=True)
     async def clear_server_settings(self, context: Context):
         """
@@ -116,7 +116,7 @@ class CommandsCog(commands.Cog):
                               f"#channel2 ...`\n"
                               f"`{PREFIX}roles` → Declare roles as queue managers. You can tag one or multiple roles:\n"
                               f"`{PREFIX}roles @Role` / `{PREFIX}roles @Role1 @Role2 ...`\n"
-                              f"`{PREFIX}clear` → Clear all configurations for this server (reset).")
+                              f"`{PREFIX}reset` → Clear all configurations for this server.")
         embed.add_field(name="Queue management",
                         value="When a regular user sends a message in a queue channel, the bot wil reply with "
                               ":inbox_tray:. Consecutive messages by the same user (ignoring interruptions by "
