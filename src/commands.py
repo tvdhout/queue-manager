@@ -101,7 +101,8 @@ class CommandsCog(commands.Cog):
         @param context: The context of this command
         @return:
         """
-        embed = Embed(title="Help", colour=0xffff00)
+        embed = Embed(title="Help (click for docs)", colour=0xffff00,
+                      url="https://github.com/tvdhout/queue-manager/blob/main/README.md")
         embed.add_field(name=f"Setup",
                         value="This bot is used to manage a queue of questions and archive them "
                               "when answered. This bot requires a small setup to be functional. You must set the "
@@ -122,9 +123,9 @@ class CommandsCog(commands.Cog):
                               ":inbox_tray:. Consecutive messages by the same user (ignoring interruptions by "
                               "managers) are regarded as one. A queue manager can click on the :inbox_tray: reaction "
                               "to claim the question. Once answered it can be archived by clicking on the "
-                              ":outbox_tray:. Queue managers that are not the claimer of a question can still archive "
-                              "it, after clicking on the :white_check_mark: for confirmation, to avoid accidentally "
-                              "archiving a message you did not claim.",
+                              ":outbox_tray: reaction. Queue managers that are not the claimer of a question can "
+                              "still archive it, after clicking on the :white_check_mark: for confirmation, "
+                              "to avoid accidentally archiving a message you did not claim.",
                         inline=False)
         await context.send(embed=embed)
 
