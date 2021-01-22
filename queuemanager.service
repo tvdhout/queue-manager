@@ -1,0 +1,14 @@
+[Unit]
+Description=Queue Manager Discord bot
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=thijs
+ExecStart=source /home/thijs/QueueManager/venv/bin/activate; python3 /home/thijs/QueueManager/QueueManager.py
+
+[Install]
+WantedBy=multi-user.target
