@@ -1,7 +1,8 @@
+import re
 from discord import Embed
 from discord.ext import commands
 from discord.ext.commands import Context
-import re
+
 from QueueManager import QueueManager
 from config import PREFIX
 
@@ -13,6 +14,11 @@ class CommandsCog(commands.Cog):
     @commands.command(name='archive')
     @commands.has_permissions(administrator=True)
     async def set_archive_channel(self, context: Context):
+        """
+        Set the channel in which this command is used as the archive channel for this server.
+        @param context: The context of the command
+        @return:
+        """
         channel_id = str(context.channel.id)
         server_id = str(context.guild.id)
         cursor = self.client.dbconnection.cursor()
@@ -26,12 +32,17 @@ class CommandsCog(commands.Cog):
     @commands.command(name='queue')
     @commands.has_permissions(administrator=True)
     async def set_queue_channels(self, context: Context):
+        """
+        Declare the channels given in the arguments of this command as queues.
+        @param context: The context of the command
+        @return:
+        """
         channels = context.message.content.split()[1:]
         if len(channels) == 0:
             await context.send(f"Tag the channels to enable as queue channel the in command's arguments: "
                                f"`{PREFIX}questions #questions1 #questions2`.")
             return
-        channels = list(map(lambda c: re.sub('[><#]', '', c), channels))
+        channels = list(map(lambda c: re.sub('[><#]', '', c), channels))  # Clear the tagging syntax around channel IDs
         channels_string = " ".join(channels)
         server_id = str(context.guild.id)
         cursor = self.client.dbconnection.cursor()
@@ -46,12 +57,17 @@ class CommandsCog(commands.Cog):
     @commands.command(name='roles')
     @commands.has_permissions(administrator=True)
     async def set_manager_roles(self, context: Context):
+        """
+        Declare the roles given in the arguments of this command as queue managers.
+        @param context: The context of the command
+        @return:
+        """
         roles = context.message.content.split()[1:]
         if len(roles) == 0:
             await context.send(f"Tag the roles to be allowed to manage queues in the command's arguments: "
                                f"`{PREFIX}roles @Role1 @Role2`.")
             return
-        roles = list(map(lambda r: re.sub('[><@&]', '', r), roles))
+        roles = list(map(lambda r: re.sub('[><@&]', '', r), roles))  # Clear the tagging syntax around roles IDs
         roles_string = " ".join(roles)
         server_id = str(context.guild.id)
         cursor = self.client.dbconnection.cursor()
@@ -66,6 +82,11 @@ class CommandsCog(commands.Cog):
     @commands.command(name='help')
     @commands.has_permissions(administrator=True)
     async def help_command(self, context: Context):
+        """
+        Display the help message.
+        @param context: The context of this command
+        @return:
+        """
         embed = Embed(title="Help", colour=0xffff00)
         embed.add_field(name=f"Setup",
                         value="This bot is used to manage a queue of questions and archive them "
