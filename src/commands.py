@@ -12,11 +12,12 @@ class CommandsCog(commands.Cog):
         self.client = client
 
     @commands.command(name='archive')
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def set_archive_channel(self, context: Context):
         """
         Set the channel in which this command is used as the archive channel for this server.
-        @param context: The context of the command
+        @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
         channel_id = str(context.channel.id)
@@ -30,11 +31,12 @@ class CommandsCog(commands.Cog):
         await context.send(f"{context.channel.mention} is now set as the archive channel.")
 
     @commands.command(name='queue')
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def set_queue_channels(self, context: Context):
         """
         Declare the channels given in the arguments of this command as queues.
-        @param context: The context of the command
+        @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
         channels = context.message.content.split()[1:]
@@ -55,11 +57,12 @@ class CommandsCog(commands.Cog):
         await context.send(f"The channels used as queues are: {', '.join(context.message.content.split()[1:])}")
 
     @commands.command(name='roles')
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def set_manager_roles(self, context: Context):
         """
         Declare the roles given in the arguments of this command as queue managers.
-        @param context: The context of the command
+        @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
         roles = context.message.content.split()[1:]
@@ -80,11 +83,12 @@ class CommandsCog(commands.Cog):
         await context.send(f"The roles that can manage queues are: {', '.join(context.message.content.split()[1:])}")
 
     @commands.command(name='reset')
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def clear_server_settings(self, context: Context):
         """
         Delete the configurations for this server.
-        @param context: The context of the command
+        @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
         cursor = self.client.dbconnection.cursor()
@@ -98,7 +102,7 @@ class CommandsCog(commands.Cog):
     async def help_command(self, context: Context):
         """
         Display the help message.
-        @param context: The context of this command
+        @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
         embed = Embed(title="Help (click for docs)", colour=0xffff00,
