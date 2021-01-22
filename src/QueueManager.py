@@ -54,6 +54,7 @@ class QueueManager(commands.Bot):
         """
         Archive this message and those in the same chain
         """
+        # Get the archive channel
         cursor = self.dbconnection.cursor()
         cursor.execute("SELECT archiveid FROM servers WHERE serverid = %s",
                        (str(message.guild.id),))
@@ -61,6 +62,8 @@ class QueueManager(commands.Bot):
             archive_id = cursor.fetchall()[0][0]
             self.dbconnection.commit()
             channel = message.guild.get_channel(int(archive_id))
+            if channel is None:
+                raise TypeError
         except (IndexError, TypeError):  # No archive channel set
             m = await message.channel.send(f"There is not yet an archive channel for this server. Use the "
                                            f"`{PREFIX}archive` command in the channel you wish to use as archive.")
@@ -68,34 +71,31 @@ class QueueManager(commands.Bot):
             await m.delete()
             return
 
-        if channel is None:  # Something went wrong if this is the case
-            print(f"Channel {archive_id} does not exist.", file=stderr)
-            return
-        embed = Embed(title=f"Question by {message.author.name}#{message.author.discriminator}",
+        author = message.author
+        embed = Embed(title=f"Question by {author.display_name} ({author.name}#{author.discriminator})",
                       timestamp=message.created_at,
-                      thumbnail=message.author.avatar_url,
-                      colour=0xff0000)
+                      colour=0xeeeeee)
+        embed.set_thumbnail(url=author.avatar_url)
+        embed.add_field(name=f"{author.display_name}:", value=message.content, inline=False)
 
-        history = await message.channel.history(limit=30).flatten()  # Look for chain to archive
-        manager_roles = self.get_manager_roles(message.author.guild)
-        chain = False
-        for m in history[::-1]:  # Reverse the list (old to new)
-            if m == message:
-                embed.add_field(name=f"{m.author.display_name}:", value=message.content, inline=False)
-                chain = True
+        # Look for message chain to include.
+        manager_roles = self.get_manager_roles(author.guild)
+        async for m in message.channel.history(after=message, limit=25):  # Look in history from /message/ to now
+            if m.author == author:  # Add messages from the same user to the chain
+                embed.add_field(name=f"{m.author.display_name}:", value=m.content, inline=False)
                 await m.delete()
-                continue
-            if not chain:
-                continue
-            member = m.guild.get_member(m.author.id)
-            if m.author != message.author and not self.is_manager(member, manager_roles):
+            elif self.is_manager(m.author, manager_roles):  # Managers may interrupt, info may be useful, add to chain
+                embed.add_field(name=f"{m.author.display_name}:", value=m.content, inline=False)
+            else:
                 break
-            if self.is_manager(member, manager_roles):
-                continue
-            embed.add_field(name=f"{m.author.display_name}:", value=m.content, inline=False)
-            await m.delete()
-
+        await message.delete()
         await channel.send(embed=embed)
+
+        # Delete message from database
+        cursor = self.dbconnection.cursor()
+        cursor.execute("DELETE FROM messages WHERE messageid = %s",
+                       (str(message.id),))
+        self.dbconnection.commit()
 
     async def on_message(self, message: discord.Message):
         if message.author.id == self.user.id:  # The bot should not react to its own message
@@ -164,6 +164,9 @@ class QueueManager(commands.Bot):
             await self.archive(reaction.message)
         elif reaction.emoji == '✅':
             await self.archive(reaction.message)
+        else:  # remove any other reactions than those mentioned above.
+            await reaction.remove(member)
+            return
 
 
 if __name__ == "__main__":
