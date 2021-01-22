@@ -125,7 +125,7 @@ class CommandsCog(commands.Cog):
                               "to claim the question. Once answered it can be archived by clicking on the "
                               ":outbox_tray: reaction. Queue managers that are not the claimer of a question can "
                               "still archive it, after clicking on the :white_check_mark: for confirmation, "
-                              "to avoid accidentally archiving a message you did not claim.",
+                              "to avoid accidentally archiving a message they did not claim.",
                         inline=False)
         await context.send(embed=embed)
 
