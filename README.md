@@ -12,7 +12,8 @@ This bot is used to manage a queue of questions and archive them when answered. 
 * `?help` → Show this menu.
 * `?archive` → Use this command in the channel you want to use as archive.
 * `?queue #channels` → Declare channels as queues. You can tag one or multiple channels: `?queue #channel` / `?queue #channel1 #channel2 ...`
-* `?roles` → Declare roles as queue managers. You can tag one or multiple roles: `?roles @Role` / `?roles @Role1 @Role2 ...`
+* `?roles` → Declare roles as queue managers. You can tag one or multiple roles: `?roles @
+* `?clear` → Clear all configurations for this server (reset).
 ##### Queue management
 When a regular user sends a message in a queue channel, the bot wil reply with :inbox_tray:. Consecutive messages by the same user (ignoring interruptions by managers) are regarded as one. A queue manager can click on the :inbox_tray: reaction to claim the question. Once answered it can be archived by clicking on the :outbox_tray:. Queue managers that are not the claimer of a question can still archive it, after clicking on the :white_check_mark: for confirmation, to avoid accidentally archiving a message you did not claim.
 
