@@ -31,3 +31,10 @@ table `messages`:
 |-----------|-------------|------|---------|---------|
 | messageid | VARCHAR(50) | NO   | PRIMARY | NULL    |
 | ownerid   | VARCHAR(50) | YES  |         | NULL    |
+
+### Host this bot yourself:
+To be able to make changes to this bot and host it yourself, follow these steps:
+1. Create an application on [the discord developer dashboard](https://discord.com/developers), go to its "Bot" tab and save the bot token to a file in your system. This token will be retrieved in [the config file](https://github.com/tvdhout/queue-manager/blob/main/src/config.py#L1).
+2. Ensure a database connection with table schemas as described above. The connection should be passed to the `QueueManager` object in [the main function](https://github.com/tvdhout/queue-manager/blob/5c76c4d7b2fb2f8ae2d769eeb94069af3997278e/src/QueueManager.py#L215). Note that the current connection is a MySQL connection; when using a different connection, be sure to edit the substitution characters (`%s`) in the queries.
+3. Create a python environment with the required [dependencies](https://github.com/tvdhout/queue-manager/blob/main/requirements.txt).
+4. Run [QueueManager.py](https://github.com/tvdhout/queue-manager/blob/main/src/QueueManager.py) using that python environment (>=3.7).
