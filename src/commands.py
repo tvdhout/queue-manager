@@ -12,11 +12,12 @@ class CommandsCog(commands.Cog):
         self.client = client
 
     @commands.command(name='archive')
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def set_archive_channel(self, context: Context):
         """
         Set the channel in which this command is used as the archive channel for this server.
-        @param context: The context of the command
+        @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
         channel_id = str(context.channel.id)
@@ -30,11 +31,12 @@ class CommandsCog(commands.Cog):
         await context.send(f"{context.channel.mention} is now set as the archive channel.")
 
     @commands.command(name='queue')
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def set_queue_channels(self, context: Context):
         """
         Declare the channels given in the arguments of this command as queues.
-        @param context: The context of the command
+        @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
         channels = context.message.content.split()[1:]
@@ -55,11 +57,12 @@ class CommandsCog(commands.Cog):
         await context.send(f"The channels used as queues are: {', '.join(context.message.content.split()[1:])}")
 
     @commands.command(name='roles')
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def set_manager_roles(self, context: Context):
         """
         Declare the roles given in the arguments of this command as queue managers.
-        @param context: The context of the command
+        @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
         roles = context.message.content.split()[1:]
@@ -80,11 +83,12 @@ class CommandsCog(commands.Cog):
         await context.send(f"The roles that can manage queues are: {', '.join(context.message.content.split()[1:])}")
 
     @commands.command(name='reset')
+    @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def clear_server_settings(self, context: Context):
         """
         Delete the configurations for this server.
-        @param context: The context of the command
+        @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
         cursor = self.client.dbconnection.cursor()
@@ -98,10 +102,11 @@ class CommandsCog(commands.Cog):
     async def help_command(self, context: Context):
         """
         Display the help message.
-        @param context: The context of this command
+        @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
-        embed = Embed(title="Help", colour=0xffff00)
+        embed = Embed(title="Help (click for docs)", colour=0xffff00,
+                      url="https://github.com/tvdhout/queue-manager/blob/main/README.md")
         embed.add_field(name=f"Setup",
                         value="This bot is used to manage a queue of questions and archive them "
                               "when answered. This bot requires a small setup to be functional. You must set the "
@@ -122,9 +127,9 @@ class CommandsCog(commands.Cog):
                               ":inbox_tray:. Consecutive messages by the same user (ignoring interruptions by "
                               "managers) are regarded as one. A queue manager can click on the :inbox_tray: reaction "
                               "to claim the question. Once answered it can be archived by clicking on the "
-                              ":outbox_tray:. Queue managers that are not the claimer of a question can still archive "
-                              "it, after clicking on the :white_check_mark: for confirmation, to avoid accidentally "
-                              "archiving a message you did not claim.",
+                              ":outbox_tray: reaction. Queue managers that are not the claimer of a question can "
+                              "still archive it, after clicking on the :white_check_mark: for confirmation, "
+                              "to avoid accidentally archiving a message they did not claim.",
                         inline=False)
         await context.send(embed=embed)
 

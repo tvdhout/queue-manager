@@ -121,6 +121,17 @@ class QueueManager(commands.Bot):
         print(f"Logged in as {self.user}")
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="?help"))
 
+    async def on_command_error(self, context, exception):
+        """
+        Event handler. Triggered when a command raises an exception. Ignore CommandNotFound, raise exception otherwise.
+        @param context: discord.ext.commands.Context: The context of the command
+        @param exception: Exception: The exception that was raised
+        @return:
+        """
+        if isinstance(exception, commands.CommandNotFound):
+            return
+        raise exception
+
     async def on_message(self, message: discord.Message):
         """
         Event handler. Triggered when a message is sent in a channel visible to the bot.
