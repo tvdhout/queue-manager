@@ -5,6 +5,7 @@ from discord.ext.commands import Context
 
 from QueueManager import QueueManager
 from config import PREFIX
+from server_conf import ServerConfiguration
 
 
 class CommandsCog(commands.Cog):
@@ -20,17 +21,20 @@ class CommandsCog(commands.Cog):
         @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
-        channel_id = str(context.channel.id)
+        channel_id = context.channel.id
         server_id = str(context.guild.id)
         cursor = self.client.dbconnection.cursor()
         cursor.execute("INSERT INTO servers "
                        "(serverid, archiveid) VALUES (%s, %s) "
                        "ON DUPLICATE KEY UPDATE  archiveid = VALUES(archiveid)",
-                       (server_id, channel_id))
+                       (server_id, str(channel_id)))
         self.client.dbconnection.commit()
-        await context.send(f"{context.channel.mention} is now set as the archive channel.")
+        self.client.get_server_conf(context.guild).set_archive_id(channel_id)
+        embed = Embed(title="Archive channel", colour=0xffe400)
+        embed.add_field(name="Success!", value=f"{context.channel.mention} is now set as the archive channel.")
+        await context.send(embed=embed)
 
-    @commands.command(name='queue')
+    @commands.command(name='queues', aliases=['queue'])
     @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def set_queue_channels(self, context: Context):
@@ -53,10 +57,13 @@ class CommandsCog(commands.Cog):
                        "ON DUPLICATE KEY UPDATE  queues = VALUES(queues)",
                        (server_id, channels_string))
         self.client.dbconnection.commit()
-        self.client.get_queue_channels(context.guild)
-        await context.send(f"The channels used as queues are: {', '.join(context.message.content.split()[1:])}")
+        self.client.get_server_conf(context.guild).set_queue_ids(list(map(int, channels)))
+        embed = Embed(title="Queue channels", colour=0xffe400)
+        embed.add_field(name="Success!", value=f"The channel(s) used as queues are: "
+                                               f"{', '.join(context.message.content.split()[1:])}")
+        await context.send(embed=embed)
 
-    @commands.command(name='roles')
+    @commands.command(name='roles', aliases=['role'])
     @commands.guild_only()
     @commands.has_permissions(administrator=True)
     async def set_manager_roles(self, context: Context):
@@ -79,13 +86,58 @@ class CommandsCog(commands.Cog):
                        "ON DUPLICATE KEY UPDATE  roles = VALUES(roles)",
                        (server_id, roles_string))
         self.client.dbconnection.commit()
-        self.client.get_queue_channels(context.guild)
-        await context.send(f"The roles that can manage queues are: {', '.join(context.message.content.split()[1:])}")
+        self.client.get_server_conf(context.guild).set_role_ids(set(map(int, roles)))
+        embed = Embed(title="Queue manager roles", colour=0xffe400)
+        embed.add_field(name="Success!", value=f"The role(s) that can manage queues are: "
+                                               f"{', '.join(context.message.content.split()[1:])}")
+        await context.send(embed=embed)
+
+    @commands.command(name='config', aliases=['configuration'])
+    @commands.has_permissions(administrator=True)
+    async def show_configuration(self, context: Context):
+        """
+        Show the Queue Manager configuration for this channel: arhive channel, queue channel(s), and manager role(s)
+        @param context: discord.ext.commands.Context: The context of the command
+        @return:
+        """
+        configuration: ServerConfiguration = self.client.get_server_conf(context.guild)
+        embed = Embed(title="Queue Manager configuration", colour=0xffe400)
+        # Archive channel
+        try:
+            archive = context.guild.get_channel(configuration.archive_id).mention  # Raises AttributeError if not set.
+            if archive is None:
+                raise AttributeError
+        except AttributeError:
+            archive = f"Not yet defined. Use the `{PREFIX}archive` command in the channel you want to set as " \
+                      f"archive channel"
+        embed.add_field(name="Archive channel:", value=archive, inline=False)
+
+        # Queue channels
+        queues = []
+        for q_id in configuration.queue_ids:
+            try:
+                queues.append(context.guild.get_channel(q_id).mention)
+            except AttributeError:
+                pass
+        queues = ", ".join(queues) or f"None defined. Use the `{PREFIX}queues` command to declare channels as queues."
+        embed.add_field(name="Queue channels:", value=queues, inline=False)
+
+        # Manager roles
+        roles = []
+        for r_id in configuration.role_ids:
+            try:
+                roles.append(context.guild.get_role(r_id).mention)
+            except AttributeError:
+                pass
+        roles = ", ".join(roles) or f"None defined. Use the `{PREFIX}roles` command to declare roles as managers."
+        embed.add_field(name="Queue Manager roles:", value=roles, inline=False)
+
+        await context.send(embed=embed)
 
     @commands.command(name='reset')
     @commands.guild_only()
     @commands.has_permissions(administrator=True)
-    async def clear_server_settings(self, context: Context):
+    async def clear_configuration(self, context: Context):
         """
         Delete the configurations for this server.
         @param context: discord.ext.commands.Context: The context of the command
@@ -95,7 +147,13 @@ class CommandsCog(commands.Cog):
         cursor.execute("DELETE FROM servers WHERE serverid = %s",
                        (str(context.guild.id),))
         self.client.dbconnection.commit()
-        await context.send("All configurations for this server are removed.")
+        try:
+            del self.client.server_confs[context.guild.id]  # Delete server configuration
+        except KeyError:
+            pass
+        embed = Embed(title="Server configuration reset", colour=0xffe400)
+        embed.add_field(name="Reset succesful", value="All configurations for this server are removed.")
+        await context.send(embed=embed)
 
     @commands.command(name='help')
     @commands.has_permissions(administrator=True)
@@ -116,11 +174,12 @@ class CommandsCog(commands.Cog):
         embed.add_field(name="Command usage",
                         value=f"`{PREFIX}help` → Show this menu.\n"
                               f"`{PREFIX}archive` → Use this command in the channel you want to use as archive.\n"
-                              f"`{PREFIX}queue #channels` → Declare channels as queues. You can "
-                              f"tag one or multiple channels: `{PREFIX}queue #channel` / `{PREFIX}queue #channel1 "
+                              f"`{PREFIX}queues #channels` → Declare channels as queues. You can "
+                              f"tag one or multiple channels: `{PREFIX}queue #channel` / `{PREFIX}queues #channel1 "
                               f"#channel2 ...`\n"
                               f"`{PREFIX}roles` → Declare roles as queue managers. You can tag one or multiple roles:\n"
-                              f"`{PREFIX}roles @Role` / `{PREFIX}roles @Role1 @Role2 ...`\n"
+                              f"`{PREFIX}role @Role` / `{PREFIX}roles @Role1 @Role2 ...`\n"
+                              f"`{PREFIX}config` → Show the current Queue Manager configurations for this server."
                               f"`{PREFIX}reset` → Clear all configurations for this server.")
         embed.add_field(name="Queue management",
                         value="When a regular user sends a message in a queue channel, the bot wil reply with "
