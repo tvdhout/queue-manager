@@ -8,7 +8,7 @@ import mysql.connector
 
 from server_conf import ServerConfiguration
 from config import config
-TOKEN, PREFIX = config(release=False)
+TOKEN, PREFIX = config(release=True)
 
 
 class QueueManager(commands.Bot):

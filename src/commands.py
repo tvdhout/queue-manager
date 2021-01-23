@@ -179,7 +179,7 @@ class CommandsCog(commands.Cog):
                               f"#channel2 ...`\n"
                               f"`{PREFIX}roles` → Declare roles as queue managers. You can tag one or multiple roles:\n"
                               f"`{PREFIX}role @Role` / `{PREFIX}roles @Role1 @Role2 ...`\n"
-                              f"`{PREFIX}config` → Show the current Queue Manager configurations for this server."
+                              f"`{PREFIX}config` → Show the current Queue Manager configurations for this server.\n"
                               f"`{PREFIX}reset` → Clear all configurations for this server.")
         embed.add_field(name="Queue management",
                         value="When a regular user sends a message in a queue channel, the bot wil reply with "
