@@ -1,18 +1,27 @@
 from sys import stderr
-from typing import List, Set
+from typing import List, Set, Dict, Optional
 import discord
 import asyncio
 from discord import Reaction, User, Member, Embed, Message, Guild
 from discord.ext import commands
 import mysql.connector
 
-from config import PREFIX, TOKEN
+from server_conf import ServerConfiguration
+from config import config
+TOKEN, PREFIX = config(release=False)
 
 
 class QueueManager(commands.Bot):
     def __init__(self, dbconnection: mysql.connector.MySQLConnection, **kwargs):
         super().__init__(**kwargs)
         self.dbconnection = dbconnection
+        self.server_confs: Dict[int, ServerConfiguration] = {}  # server_id : server configuration
+
+    def get_server_conf(self, guild: Guild) -> ServerConfiguration:
+        guild_id = guild.id
+        if guild_id not in self.server_confs:
+            self.server_confs[guild_id] = ServerConfiguration(guild_id, self.dbconnection)
+        return self.server_confs[guild_id]
 
     def get_queue_channels(self, guild: Guild) -> List[int]:
         """
@@ -20,17 +29,7 @@ class QueueManager(commands.Bot):
         @param guild: discord.Guild: The server for which to retrieve the queue channels
         @return: List[int]: a List of channel IDs
         """
-        server_id = str(guild.id)
-        cursor = self.dbconnection.cursor()
-        cursor.execute("SELECT queues FROM servers WHERE serverid = %s",
-                       (server_id,))
-        try:
-            channels_string = cursor.fetchall()[0][0]
-            channels = channels_string.split()
-            channels = list(map(int, channels))  # cast to ints
-            return channels
-        except (IndexError, AttributeError):  # server not in database or question channels not set
-            return []
+        return self.get_server_conf(guild).queue_ids
 
     def get_manager_roles(self, guild: Guild) -> Set[int]:
         """
@@ -38,17 +37,7 @@ class QueueManager(commands.Bot):
         @param guild: discord.Guild: The server for which to retrieve the queue manager roles
         @return: Set[int]: a Set of roles IDs
         """
-        server_id = str(guild.id)
-        cursor = self.dbconnection.cursor()
-        cursor.execute("SELECT roles FROM servers WHERE serverid = %s",
-                       (server_id,))
-        try:
-            roles_string = cursor.fetchall()[0][0]
-            roles = roles_string.split()
-            roles = set(map(int, roles))  # cast to ints
-            return roles
-        except (IndexError, AttributeError):  # server not in database or question channels not set
-            return set()
+        return self.get_server_conf(guild).role_ids
 
     def is_manager(self, member: Member, manager_roles: Set[int] = None) -> bool:
         """
@@ -62,31 +51,35 @@ class QueueManager(commands.Bot):
         member_roles = set(map(lambda r: r.id, member.roles))
         return len(member_roles & manager_roles) > 0  # Intersect is non-empty means they have a manager role.
 
-    async def archive(self, message: Message):
+    async def archive(self, message: Message, reaction: Reaction):
         """
         Archive the given message by sending it in the archive channel and removing it from the queue.
         @param message: discord.Message: The message to archive
+        @param reaction: discord.Reaction: Reaction that triggered the archive event
         @return:
         """
         # Get the archive channel
-        cursor = self.dbconnection.cursor()
-        cursor.execute("SELECT archiveid FROM servers WHERE serverid = %s",
-                       (str(message.guild.id),))
         try:
-            archive_id = cursor.fetchall()[0][0]
-            self.dbconnection.commit()
+            archive_id = self.get_server_conf(message.guild).archive_id  # int or None
             channel = message.guild.get_channel(int(archive_id))
-            if channel is None:
-                raise TypeError
-        except (IndexError, TypeError):  # No archive channel set
-            m = await message.channel.send(f"There is not yet an archive channel for this server. Use the "
-                                           f"`{PREFIX}archive` command in the channel you wish to use as archive.")
+        except TypeError:
+            reactor: Optional[Member] = None
+            async for user in reaction.users():  # Find the manager that tried to archive this message
+                if user == self.user:
+                    continue
+                reactor = user
+                break
+            await reaction.remove(reactor)
+            m = await message.channel.send(f"{reactor.mention} There is not yet an archive channel for this server. "
+                                           f"Use the `{PREFIX}archive` command in the channel you wish to use as "
+                                           f"archive.")
             await asyncio.sleep(8)
             await m.delete()
             return
 
         author = message.author
-        embed = Embed(title=f"Question by {author.display_name} ({author.name}#{author.discriminator})",
+        embed = Embed(title=f"Question by {author.display_name} ({author.name}#{author.discriminator}) in "
+                            f"#{message.channel}",
                       timestamp=message.created_at,
                       colour=0xeeeeee)
         embed.set_thumbnail(url=author.avatar_url)
@@ -119,7 +112,7 @@ class QueueManager(commands.Bot):
         @return:
         """
         print(f"Logged in as {self.user}")
-        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="?help"))
+        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=f"{PREFIX}help"))
 
     async def on_command_error(self, context, exception):
         """
@@ -172,6 +165,9 @@ class QueueManager(commands.Bot):
         """
         if isinstance(member, User) or member == self.user:  # Reaction is in a DM, or the bot added the reaction
             return
+        # Don't care about reaction in non-queue channels.
+        if reaction.message.channel.id not in self.get_queue_channels(reaction.message.guild):
+            return
         if not self.is_manager(member):  # Not a manager
             await reaction.remove(member)
             return
@@ -207,9 +203,9 @@ class QueueManager(commands.Bot):
                 except discord.errors.NotFound:  # They confirmed.
                     pass
                 return
-            await self.archive(reaction.message)
+            await self.archive(reaction.message, reaction)
         elif reaction.emoji == '✅':
-            await self.archive(reaction.message)
+            await self.archive(reaction.message, reaction)
         else:  # Remove any other reactions than those mentioned above.
             await reaction.remove(member)
             return
