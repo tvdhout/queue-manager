@@ -1,55 +1,58 @@
-from typing import List, Set, Dict, Optional
+from typing import Set, Dict, Optional
 import discord
 import asyncio
-from discord import Reaction, User, Member, Embed, Message, Guild
+from discord import Reaction, User, Member, Embed, Message, Guild, TextChannel, Role
 from discord.ext import commands
 
 from server_conf import ServerConfiguration
 from database_connection import execute_query
 from config import config
 
-TOKEN, PREFIX = config(release=False)
+TOKEN, PREFIX = config(release=True)
 
 
 class QueueManager(commands.Bot):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.server_confs: Dict[Guild, ServerConfiguration] = {}  # server : server configuration
+        # Keeps track of server configurations in a session to limit the amount of database traffic.
+        self.server_confs: Dict[Guild, ServerConfiguration] = {}
 
     def get_server_conf(self, server: Guild) -> ServerConfiguration:
+        """
+        Set the ServerConfiguration for the given server
+        @param server: discord.Guild: The server for which to retrieve the configuration
+        @return: ServerConfiguration: The configuration
+        """
         if server not in self.server_confs:
             self.server_confs[server] = ServerConfiguration(server)
         return self.server_confs[server]
 
-    def get_queue_channels(self, guild: Guild) -> List[int]:
+    def get_queue_channels(self, guild: Guild) -> Set[TextChannel]:
         """
         Get the channels that are declared as queues for this server.
         @param guild: discord.Guild: The server for which to retrieve the queue channels
-        @return: List[int]: a List of channel IDs
+        @return: Set[TextChannel]: a Set of channels
         """
-        return self.get_server_conf(guild).queue_ids
+        return self.get_server_conf(guild).queues
 
-    def get_manager_roles(self, guild: Guild) -> Set[int]:
+    def get_manager_roles(self, guild: Guild) -> Set[Role]:
         """
         Get the roles that are declared to be queue managers for this server.
         @param guild: discord.Guild: The server for which to retrieve the queue manager roles
-        @return: Set[int]: a Set of roles IDs
+        @return: Set[Role]: a Set of roles
         """
-        return self.get_server_conf(guild).role_ids
+        return self.get_server_conf(guild).roles
 
-    def is_manager(self, member: Member, manager_roles: Set[int] = None) -> bool:
+    def is_manager(self, member: Member) -> bool:
         """
         Determine if member is a queue manager.
         @param member: discord.Member: The member to check
-        @param manager_roles: Optional[Set[int]]: The roles of queue managers. If None, it will be requested
         @return: bool: Whether is member is a queue manager or not
         """
-        if manager_roles is None:
-            manager_roles = self.get_manager_roles(member.guild)
-        member_roles = set(map(lambda r: r.id, member.roles))
-        return len(member_roles & manager_roles) > 0  # Intersect is non-empty means they have a manager role.
+        manager_roles = self.get_manager_roles(member.guild)
+        return len(set(member.roles) & manager_roles) > 0  # Intersect is non-empty means they have a manager role.
 
-    async def archive(self, message: Message, reaction: Reaction):
+    async def archive(self, message: Message, reaction: Reaction) -> None:
         """
         Archive the given message by sending it in the archive channel and removing it from the queue.
         @param message: discord.Message: The message to archive
@@ -58,13 +61,13 @@ class QueueManager(commands.Bot):
         """
         # Get the archive channel
         try:
-            archive_id = self.get_server_conf(message.guild).archive_id  # int or None
-            channel = message.guild.get_channel(int(archive_id))
+            channel = message.guild.get_channel(self.get_server_conf(message.guild).archive.id)
             if channel is None:
+                self.get_server_conf(message.guild).set_archive(None)
                 raise TypeError
-        except TypeError:
+        except (TypeError, AttributeError):
             reactor: Optional[Member] = None
-            async for user in reaction.users():  # Find the manager that tried to archive this message
+            async for user in reaction.users():  # Find the manager that tried to archive this message to mention them.
                 if user == self.user:
                     continue
                 reactor = user
@@ -73,7 +76,7 @@ class QueueManager(commands.Bot):
             m = await message.channel.send(f"{reactor.mention} There is not yet an archive channel for this server. "
                                            f"Use the `{PREFIX}archive` command in the channel you wish to use as "
                                            f"archive.")
-            await asyncio.sleep(8)
+            await asyncio.sleep(7)
             await m.delete()
             return
 
@@ -86,12 +89,11 @@ class QueueManager(commands.Bot):
         embed.add_field(name=f"{author.display_name}:", value=message.content, inline=False)
 
         # Look for message chain to include.
-        manager_roles = self.get_manager_roles(author.guild)
         async for m in message.channel.history(after=message, limit=25):  # Look in history from /message/ to now
             if m.author == author:  # Add messages from the same user to the chain
                 embed.add_field(name=f"{m.author.display_name}:", value=m.content, inline=False)
                 await m.delete()
-            elif self.is_manager(m.author, manager_roles):  # Managers may interrupt, info may be useful, add to chain
+            elif self.is_manager(m.author):  # Managers may interrupt, info may be useful, add to chain
                 embed.add_field(name=f"{m.author.display_name}:", value=m.content, inline=False)
             else:
                 break
@@ -110,6 +112,7 @@ class QueueManager(commands.Bot):
         """
         print(f"Logged in as {self.user}")
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=f"{PREFIX}help"))
+        execute_query("DELETE FROM messages;")  # Delete all remaining messages from a previous session.
 
     async def on_command_error(self, context, exception):
         """
@@ -131,12 +134,11 @@ class QueueManager(commands.Bot):
         if message.author.id == self.user.id:  # The bot should not react to its own message
             return
         # The bot should not be concerned with any channel that is not a queue, and should not react to manager roles.
-        if message.channel.id not in self.get_queue_channels(message.guild) or self.is_manager(message.author):
+        if message.channel not in self.get_queue_channels(message.guild) or self.is_manager(message.author):
             await self.process_commands(message)
             return
 
         chain = False  # This is not the continuation of a previous message until proven otherwise
-        manager_roles = self.get_manager_roles(message.author.guild)
         async for prev_message in message.channel.history(limit=15):  # Look in message history for chain
             if prev_message == message:  # Don't look at the current message
                 continue
@@ -144,7 +146,7 @@ class QueueManager(commands.Bot):
                 chain = True
                 break
             member = message.guild.get_member(prev_message.author.id)
-            if self.is_manager(member, manager_roles):
+            if self.is_manager(member):
                 continue
             break
         if chain:
@@ -163,7 +165,7 @@ class QueueManager(commands.Bot):
         if isinstance(member, User) or member == self.user:  # Reaction is in a DM, or the bot added the reaction
             return
         # Don't care about reaction in non-queue channels.
-        if reaction.message.channel.id not in self.get_queue_channels(reaction.message.guild):
+        if reaction.message.channel not in self.get_queue_channels(reaction.message.guild):
             return
         if not self.is_manager(member):  # Not a manager
             await reaction.remove(member)
