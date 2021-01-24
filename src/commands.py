@@ -178,7 +178,10 @@ class CommandsCog(commands.Cog):
             if not context.message.author.guild_permissions.administrator:
                 return
         embed = Embed(title="Help (click for docs)", colour=0xffff00,
-                      url="https://github.com/tvdhout/queue-manager/blob/main/README.md")
+                      url="https://github.com/tvdhout/queue-manager/blob/main/README.md",)
+        embed.set_footer(text="Made by Thijs#9356",
+                         icon_url="https://cdn.discordapp.com/avatars/289163010835087360"
+                                  "/f7874fb1b63d84359307b8736f559355.webp?size=128")
         embed.add_field(name=f"Setup",
                         value="This bot is used to manage a queue of questions and archive them "
                               "when answered. This bot requires a small setup to be functional. You must set the "
