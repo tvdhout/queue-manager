@@ -123,7 +123,7 @@ class QueueManager(commands.Bot):
         @param exception: Exception: The exception that was raised
         @return:
         """
-        if isinstance(exception, commands.CommandNotFound):
+        if type(exception) in [commands.CommandNotFound, commands.NoPrivateMessage]:
             return
         raise exception
 
@@ -133,6 +133,9 @@ class QueueManager(commands.Bot):
         @param message: discord.Message: The message that is sent.
         @return:
         """
+        if message.guild is None:  # Message is a DM
+            await self.process_commands(message)
+            return
         if message.author.id == self.user.id:  # The bot should not react to its own message
             return
         # The bot should not be concerned with any channel that is not a queue, and should not react to manager roles.
