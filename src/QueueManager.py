@@ -8,7 +8,8 @@ from server_conf import ServerConfiguration
 from database_connection import execute_query
 from config import config
 
-TOKEN, PREFIX = config(release=True)
+RELEASE = False
+TOKEN, PREFIX = config(release=RELEASE)
 
 
 class QueueManager(commands.Bot):
@@ -112,7 +113,8 @@ class QueueManager(commands.Bot):
         """
         print(f"Logged in as {self.user}")
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=f"{PREFIX}help"))
-        execute_query("DELETE FROM messages;")  # Delete all remaining messages from a previous session.
+        if RELEASE:
+            execute_query("DELETE FROM messages;")  # Delete all remaining messages from a previous session.
 
     async def on_command_error(self, context, exception):
         """
