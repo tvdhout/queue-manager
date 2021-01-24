@@ -15,9 +15,9 @@ class CommandsCog(commands.Cog):
     def __init__(self, client: QueueManager):
         self.client = client
 
-    @commands.command(name='archive')
-    @commands.guild_only()
+    @commands.command(name='archive', aliases=[' archive'])
     @commands.has_permissions(administrator=True)
+    @commands.guild_only()
     async def set_archive_channel(self, context: Context):
         """
         Set the channel in which this command is used as the archive channel for this server.
@@ -36,8 +36,8 @@ class CommandsCog(commands.Cog):
         await context.send(embed=embed)
 
     @commands.command(name='queues', aliases=['queue'])
-    @commands.guild_only()
     @commands.has_permissions(administrator=True)
+    @commands.guild_only()
     async def set_queue_channels(self, context: Context):
         """
         Declare the channels given in the arguments of this command as queues.
@@ -72,8 +72,8 @@ class CommandsCog(commands.Cog):
         await context.send(embed=embed)
 
     @commands.command(name='roles', aliases=['role'])
-    @commands.guild_only()
     @commands.has_permissions(administrator=True)
+    @commands.guild_only()
     async def set_manager_roles(self, context: Context):
         """
         Declare the roles given in the arguments of this command as queue managers.
@@ -109,6 +109,7 @@ class CommandsCog(commands.Cog):
 
     @commands.command(name='config', aliases=['configuration'])
     @commands.has_permissions(administrator=True)
+    @commands.guild_only()
     async def show_configuration(self, context: Context):
         """
         Show the Queue Manager configuration for this channel: arhive channel, queue channel(s), and manager role(s)
@@ -147,8 +148,8 @@ class CommandsCog(commands.Cog):
         await context.send(embed=embed)
 
     @commands.command(name='reset')
-    @commands.guild_only()
     @commands.has_permissions(administrator=True)
+    @commands.guild_only()
     async def clear_configuration(self, context: Context):
         """
         Delete the configurations for this server.
@@ -166,15 +167,21 @@ class CommandsCog(commands.Cog):
         await context.send(embed=embed)
 
     @commands.command(name='help')
-    @commands.has_permissions(administrator=True)
     async def help_command(self, context: Context):
         """
         Display the help message.
         @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
+        # Allow use by server admins and in DMs
+        if context.guild is not None:
+            if not context.message.author.guild_permissions.administrator:
+                return
         embed = Embed(title="Help (click for docs)", colour=0xffff00,
-                      url="https://github.com/tvdhout/queue-manager/blob/main/README.md")
+                      url="https://github.com/tvdhout/queue-manager/blob/main/README.md",)
+        embed.set_footer(text="Made by Thijs#9356",
+                         icon_url="https://cdn.discordapp.com/avatars/289163010835087360"
+                                  "/f7874fb1b63d84359307b8736f559355.webp?size=128")
         embed.add_field(name=f"Setup",
                         value="This bot is used to manage a queue of questions and archive them "
                               "when answered. This bot requires a small setup to be functional. You must set the "

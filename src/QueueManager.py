@@ -8,7 +8,8 @@ from server_conf import ServerConfiguration
 from database_connection import execute_query
 from config import config
 
-TOKEN, PREFIX = config(release=True)
+RELEASE = False
+TOKEN, PREFIX = config(release=RELEASE)
 
 
 class QueueManager(commands.Bot):
@@ -65,7 +66,9 @@ class QueueManager(commands.Bot):
             if channel is None:
                 self.get_server_conf(message.guild).set_archive(None)
                 raise TypeError
-        except (TypeError, AttributeError):
+            if not channel.permissions_for(message.guild.me).send_messages:
+                raise ValueError  # Channel exists, but the bot can't send messages in there.
+        except (TypeError, AttributeError, ValueError) as e:
             reactor: Optional[Member] = None
             async for user in reaction.users():  # Find the manager that tried to archive this message to mention them.
                 if user == self.user:
@@ -73,9 +76,13 @@ class QueueManager(commands.Bot):
                 reactor = user
                 break
             await reaction.remove(reactor)
-            m = await message.channel.send(f"{reactor.mention} There is not yet an archive channel for this server. "
-                                           f"Use the `{PREFIX}archive` command in the channel you wish to use as "
-                                           f"archive.")
+            if type(e) == ValueError:
+                m = await message.channel.send("**I don't have permission to send messages in the archive channel!**")
+            else:
+                m = await message.channel.send(
+                    f"{reactor.mention} There is not yet an archive channel for this server. "
+                    f"Use the `{PREFIX}archive` command in the channel you wish to use as "
+                    f"archive.")
             await asyncio.sleep(7)
             await m.delete()
             return
@@ -95,6 +102,8 @@ class QueueManager(commands.Bot):
                 await m.delete()
             elif self.is_manager(m.author):  # Managers may interrupt, info may be useful, add to chain
                 embed.add_field(name=f"{m.author.display_name}:", value=m.content, inline=False)
+            elif m.author == message.guild.me:
+                pass
             else:
                 break
         await message.delete()
@@ -112,7 +121,8 @@ class QueueManager(commands.Bot):
         """
         print(f"Logged in as {self.user}")
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=f"{PREFIX}help"))
-        execute_query("DELETE FROM messages;")  # Delete all remaining messages from a previous session.
+        if RELEASE:
+            execute_query("DELETE FROM messages;")  # Delete all remaining messages from a previous session.
 
     async def on_command_error(self, context, exception):
         """
@@ -121,7 +131,7 @@ class QueueManager(commands.Bot):
         @param exception: Exception: The exception that was raised
         @return:
         """
-        if isinstance(exception, commands.CommandNotFound):
+        if type(exception) in [commands.CommandNotFound, commands.NoPrivateMessage]:
             return
         raise exception
 
@@ -131,6 +141,9 @@ class QueueManager(commands.Bot):
         @param message: discord.Message: The message that is sent.
         @return:
         """
+        if message.guild is None:  # Message is a DM
+            await self.process_commands(message)
+            return
         if message.author.id == self.user.id:  # The bot should not react to its own message
             return
         # The bot should not be concerned with any channel that is not a queue, and should not react to manager roles.
@@ -146,7 +159,7 @@ class QueueManager(commands.Bot):
                 chain = True
                 break
             member = message.guild.get_member(prev_message.author.id)
-            if self.is_manager(member):
+            if self.is_manager(member) or member == message.guild.me:
                 continue
             break
         if chain:
