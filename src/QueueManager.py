@@ -1,27 +1,25 @@
-from sys import stderr
 from typing import List, Set, Dict, Optional
 import discord
 import asyncio
 from discord import Reaction, User, Member, Embed, Message, Guild
 from discord.ext import commands
-import mysql.connector
 
 from server_conf import ServerConfiguration
+from database_connection import execute_query
 from config import config
-TOKEN, PREFIX = config(release=True)
+
+TOKEN, PREFIX = config(release=False)
 
 
 class QueueManager(commands.Bot):
-    def __init__(self, dbconnection: mysql.connector.MySQLConnection, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.dbconnection = dbconnection
-        self.server_confs: Dict[int, ServerConfiguration] = {}  # server_id : server configuration
+        self.server_confs: Dict[Guild, ServerConfiguration] = {}  # server : server configuration
 
-    def get_server_conf(self, guild: Guild) -> ServerConfiguration:
-        guild_id = guild.id
-        if guild_id not in self.server_confs:
-            self.server_confs[guild_id] = ServerConfiguration(guild_id, self.dbconnection)
-        return self.server_confs[guild_id]
+    def get_server_conf(self, server: Guild) -> ServerConfiguration:
+        if server not in self.server_confs:
+            self.server_confs[server] = ServerConfiguration(server)
+        return self.server_confs[server]
 
     def get_queue_channels(self, guild: Guild) -> List[int]:
         """
@@ -62,6 +60,8 @@ class QueueManager(commands.Bot):
         try:
             archive_id = self.get_server_conf(message.guild).archive_id  # int or None
             channel = message.guild.get_channel(int(archive_id))
+            if channel is None:
+                raise TypeError
         except TypeError:
             reactor: Optional[Member] = None
             async for user in reaction.users():  # Find the manager that tried to archive this message
@@ -99,10 +99,7 @@ class QueueManager(commands.Bot):
         await channel.send(embed=embed)
 
         # Delete message from database
-        cursor = self.dbconnection.cursor()
-        cursor.execute("DELETE FROM messages WHERE messageid = %s",
-                       (str(message.id),))
-        self.dbconnection.commit()
+        execute_query("DELETE FROM messages WHERE messageid = %s", (str(message.id),))
 
     # Bot event handlers:
 
@@ -174,27 +171,25 @@ class QueueManager(commands.Bot):
         if reaction.emoji == '📥':  # Manager clicked to claim this message.
             await reaction.message.clear_reactions()
             await reaction.message.add_reaction('📤')
-            cursor = self.dbconnection.cursor()
-            cursor.execute("INSERT IGNORE INTO messages "
-                           "(messageid, ownerid) VALUES (%s, %s)",
-                           (str(reaction.message.id), str(member.id)))  # Set that manager as owner of this question.
-            if cursor.rowcount > 0:  # Rows changed -> message was not yet claimed (can only happen in a split second)
+            result = execute_query("INSERT IGNORE INTO messages "
+                                   "(messageid, ownerid) VALUES (%s, %s)",
+                                   (str(reaction.message.id), str(member.id)),
+                                   return_cursor_count=True)  # Set manager as owner of this question.
+            if result > 0:  # Rows changed: message wasn't yet claimed; could happen in a split second.
                 reply = await reaction.message.reply(f"{member.mention} will answer your question.")
                 await asyncio.sleep(5)
                 await reply.delete()
-            self.dbconnection.commit()
         elif reaction.emoji == '📤':  # Manager clicked to archive this message.
-            cursor = self.dbconnection.cursor()
-            cursor.execute("SELECT ownerid FROM messages WHERE messageid = %s",
-                           (str(reaction.message.id),))
+            result = execute_query("SELECT ownerid FROM messages WHERE messageid = %s",
+                                   (str(reaction.message.id),),
+                                   return_result=True)
             try:
-                owner_id = cursor.fetchall()[0][0]
-                self.dbconnection.commit()
+                owner_id = result[0][0]
             except IndexError:
                 await reaction.message.clear_reactions()
                 await reaction.message.add_reaction('📥')
                 return
-            if owner_id != str(member.id):  # If the manager did not claim the message they need to confirm the request.
+            if owner_id != str(member.id):  # If the manager did not claim the message they need to confirm.
                 await reaction.remove(member)
                 await reaction.message.add_reaction('✅')
                 await asyncio.sleep(4)
@@ -212,21 +207,9 @@ class QueueManager(commands.Bot):
 
 
 if __name__ == "__main__":
-    try:
-        connection = mysql.connector.connect(user='thijs',
-                                             host='localhost',
-                                             database='queuemanager')
-        try:
-            intents = discord.Intents.default()
-            intents.members = True  # Need the members intent to use guild.get_member in on_message
-            client = QueueManager(dbconnection=connection, command_prefix=PREFIX, intents=intents)
-            client.remove_command('help')  # Remove the default help command
-            client.load_extension('commands')  # Load the commands defined in commands.py
-            client.run(TOKEN)
-        except KeyboardInterrupt:
-            print("Closing database connection.")
-            connection.commit()
-            connection.close()
-    except mysql.connector.Error:
-        print("Connection to database failed.", file=stderr)
-        exit(-1)
+    intents = discord.Intents.default()
+    intents.members = True  # Need the members intent to use guild.get_member in on_message
+    client = QueueManager(command_prefix=PREFIX, intents=intents)
+    client.remove_command('help')  # Remove the default help command
+    client.load_extension('commands')  # Load the commands defined in commands.py
+    client.run(TOKEN)

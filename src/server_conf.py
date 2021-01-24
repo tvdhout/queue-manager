@@ -1,11 +1,12 @@
 from typing import List, Set, Optional, Tuple
-import mysql.connector
+from discord import Guild
+
+from database_connection import execute_query
 
 
 class ServerConfiguration:
-    def __init__(self, server_id: int, dbconnection: mysql.connector.MySQLConnection):
-        self.server_id = server_id
-        self.dbconnection = dbconnection
+    def __init__(self, server: Guild):
+        self.server_id = server.id
         self.archive_id, self.queue_ids, self.role_ids = self.request_server_conf()
 
     def request_server_conf(self) -> Tuple[Optional[int], List[int], Set[int]]:
@@ -13,11 +14,11 @@ class ServerConfiguration:
         Request the server configuration from the database
         @return: archive_id: Optional[int], queue_ids: List[int], role_ids: Set[int]
         """
-        cursor = self.dbconnection.cursor()
-        cursor.execute("SELECT archiveid, queues, roles FROM servers WHERE serverid = %s;",
-                       (str(self.server_id),))
+        result = execute_query("SELECT archiveid, queues, roles FROM servers WHERE serverid = %s;",
+                               (str(self.server_id),),
+                               return_result=True)
         try:
-            archive_id, queues, roles = cursor.fetchall()[0]
+            archive_id, queues, roles = result[0]
 
             if archive_id is not None:  # Archive channel is set
                 archive_id = int(archive_id)
