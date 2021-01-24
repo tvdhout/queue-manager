@@ -6,6 +6,7 @@ from discord.ext.commands import Context
 from QueueManager import QueueManager
 from config import PREFIX
 from server_conf import ServerConfiguration
+from database_connection import execute_query
 
 
 class CommandsCog(commands.Cog):
@@ -23,12 +24,10 @@ class CommandsCog(commands.Cog):
         """
         channel_id = context.channel.id
         server_id = str(context.guild.id)
-        cursor = self.client.dbconnection.cursor()
-        cursor.execute("INSERT INTO servers "
-                       "(serverid, archiveid) VALUES (%s, %s) "
-                       "ON DUPLICATE KEY UPDATE  archiveid = VALUES(archiveid)",
-                       (server_id, str(channel_id)))
-        self.client.dbconnection.commit()
+        execute_query("INSERT INTO servers "
+                      "(serverid, archiveid) VALUES (%s, %s) "
+                      "ON DUPLICATE KEY UPDATE  archiveid = VALUES(archiveid)",
+                      (server_id, str(channel_id)))
         self.client.get_server_conf(context.guild).set_archive_id(channel_id)
         embed = Embed(title="Archive channel", colour=0xffe400)
         embed.add_field(name="Success!", value=f"{context.channel.mention} is now set as the archive channel.")
@@ -51,12 +50,10 @@ class CommandsCog(commands.Cog):
         channels = list(map(lambda c: re.sub('[><#]', '', c), channels))  # Clear the tagging syntax around channel IDs
         channels_string = " ".join(channels)
         server_id = str(context.guild.id)
-        cursor = self.client.dbconnection.cursor()
-        cursor.execute("INSERT INTO servers "
-                       "(serverid, queues) VALUES (%s, %s) "
-                       "ON DUPLICATE KEY UPDATE  queues = VALUES(queues)",
-                       (server_id, channels_string))
-        self.client.dbconnection.commit()
+        execute_query("INSERT INTO servers "
+                      "(serverid, queues) VALUES (%s, %s) "
+                      "ON DUPLICATE KEY UPDATE  queues = VALUES(queues)",
+                      (server_id, channels_string))
         self.client.get_server_conf(context.guild).set_queue_ids(list(map(int, channels)))
         embed = Embed(title="Queue channels", colour=0xffe400)
         embed.add_field(name="Success!", value=f"The channel(s) used as queues are: "
@@ -80,12 +77,10 @@ class CommandsCog(commands.Cog):
         roles = list(map(lambda r: re.sub('[><@&]', '', r), roles))  # Clear the tagging syntax around roles IDs
         roles_string = " ".join(roles)
         server_id = str(context.guild.id)
-        cursor = self.client.dbconnection.cursor()
-        cursor.execute("INSERT INTO servers "
-                       "(serverid, roles) VALUES (%s, %s) "
-                       "ON DUPLICATE KEY UPDATE  roles = VALUES(roles)",
-                       (server_id, roles_string))
-        self.client.dbconnection.commit()
+        execute_query("INSERT INTO servers "
+                      "(serverid, roles) VALUES (%s, %s) "
+                      "ON DUPLICATE KEY UPDATE  roles = VALUES(roles)",
+                      (server_id, roles_string))
         self.client.get_server_conf(context.guild).set_role_ids(set(map(int, roles)))
         embed = Embed(title="Queue manager roles", colour=0xffe400)
         embed.add_field(name="Success!", value=f"The role(s) that can manage queues are: "
@@ -131,7 +126,6 @@ class CommandsCog(commands.Cog):
                 pass
         roles = ", ".join(roles) or f"None defined. Use the `{PREFIX}roles` command to declare roles as managers."
         embed.add_field(name="Queue Manager roles:", value=roles, inline=False)
-
         await context.send(embed=embed)
 
     @commands.command(name='reset')
@@ -143,10 +137,8 @@ class CommandsCog(commands.Cog):
         @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
-        cursor = self.client.dbconnection.cursor()
-        cursor.execute("DELETE FROM servers WHERE serverid = %s",
-                       (str(context.guild.id),))
-        self.client.dbconnection.commit()
+        execute_query("DELETE FROM servers WHERE serverid = %s",
+                      (str(context.guild.id),))
         try:
             del self.client.server_confs[context.guild.id]  # Delete server configuration
         except KeyError:
