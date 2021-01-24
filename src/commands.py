@@ -1,5 +1,7 @@
 import re
-from discord import Embed
+from typing import List, Set
+from lazy_streams import stream
+from discord import Embed, TextChannel, Role
 from discord.ext import commands
 from discord.ext.commands import Context
 
@@ -22,13 +24,13 @@ class CommandsCog(commands.Cog):
         @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
-        channel_id = context.channel.id
+        channel_id = str(context.channel.id)
         server_id = str(context.guild.id)
         execute_query("INSERT INTO servers "
                       "(serverid, archiveid) VALUES (%s, %s) "
                       "ON DUPLICATE KEY UPDATE  archiveid = VALUES(archiveid)",
-                      (server_id, str(channel_id)))
-        self.client.get_server_conf(context.guild).set_archive_id(channel_id)
+                      (server_id, channel_id))
+        self.client.get_server_conf(context.guild).set_archive(context.channel)
         embed = Embed(title="Archive channel", colour=0xffe400)
         embed.add_field(name="Success!", value=f"{context.channel.mention} is now set as the archive channel.")
         await context.send(embed=embed)
@@ -42,22 +44,31 @@ class CommandsCog(commands.Cog):
         @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
-        channels = context.message.content.split()[1:]
-        if len(channels) == 0:
+        content = context.message.content
+        if len(content.split()[1:]) == 0:
             await context.send(f"Tag the channels to enable as queue channel the in command's arguments: "
                                f"`{PREFIX}questions #questions1 #questions2`.")
             return
-        channels = list(map(lambda c: re.sub('[><#]', '', c), channels))  # Clear the tagging syntax around channel IDs
-        channels_string = " ".join(channels)
+        channel_ids: List[str] = re.findall(r'<#(\d+)>', content)  # Find all channel IDs in the message
+        queues: Set[TextChannel] = set()
+        for c_id in channel_ids:
+            queue: TextChannel = context.guild.get_channel(int(c_id))
+            if queue is not None:
+                queues.add(queue)
+        if len(queues) == 0:
+            await context.send(f"Tag the channels to enable as queue channel the in command's arguments: "
+                               f"`{PREFIX}questions #questions1 #questions2`.")
+            return
+        queue_ids_string = " ".join(stream(list(queues)).map(lambda c: c.id).map(str).to_list())
         server_id = str(context.guild.id)
         execute_query("INSERT INTO servers "
                       "(serverid, queues) VALUES (%s, %s) "
                       "ON DUPLICATE KEY UPDATE  queues = VALUES(queues)",
-                      (server_id, channels_string))
-        self.client.get_server_conf(context.guild).set_queue_ids(list(map(int, channels)))
+                      (server_id, queue_ids_string))
+        self.client.get_server_conf(context.guild).set_queues(queues)
         embed = Embed(title="Queue channels", colour=0xffe400)
         embed.add_field(name="Success!", value=f"The channel(s) used as queues are: "
-                                               f"{', '.join(context.message.content.split()[1:])}")
+                                               f"{', '.join(list(map(lambda q: q.mention, queues)))}")
         await context.send(embed=embed)
 
     @commands.command(name='roles', aliases=['role'])
@@ -69,22 +80,31 @@ class CommandsCog(commands.Cog):
         @param context: discord.ext.commands.Context: The context of the command
         @return:
         """
-        roles = context.message.content.split()[1:]
+        content = context.message.content
+        if len(content.split()[1:]) == 0:  # No arguments
+            await context.send(f"Tag the roles to be allowed to manage queues in the command's arguments: "
+                               f"`{PREFIX}roles @Role1 @Role2`.")
+            return
+        role_ids: List[str] = re.findall(r'<@&(\d+)>', content)  # Clear the tagging syntax around roles IDs
+        roles: Set[Role] = set()
+        for r_id in role_ids:
+            role: Role = context.guild.get_role(int(r_id))
+            if role is not None:
+                roles.add(role)
         if len(roles) == 0:
             await context.send(f"Tag the roles to be allowed to manage queues in the command's arguments: "
                                f"`{PREFIX}roles @Role1 @Role2`.")
             return
-        roles = list(map(lambda r: re.sub('[><@&]', '', r), roles))  # Clear the tagging syntax around roles IDs
-        roles_string = " ".join(roles)
+        role_ids_string = " ".join(stream(list(roles)).map(lambda r: r.id).map(str).to_list())
         server_id = str(context.guild.id)
         execute_query("INSERT INTO servers "
                       "(serverid, roles) VALUES (%s, %s) "
                       "ON DUPLICATE KEY UPDATE  roles = VALUES(roles)",
-                      (server_id, roles_string))
-        self.client.get_server_conf(context.guild).set_role_ids(set(map(int, roles)))
+                      (server_id, role_ids_string))
+        self.client.get_server_conf(context.guild).set_roles(roles)
         embed = Embed(title="Queue manager roles", colour=0xffe400)
         embed.add_field(name="Success!", value=f"The role(s) that can manage queues are: "
-                                               f"{', '.join(context.message.content.split()[1:])}")
+                                               f"{', '.join(list(map(lambda r: r.mention, roles)))}")
         await context.send(embed=embed)
 
     @commands.command(name='config', aliases=['configuration'])
@@ -99,33 +119,31 @@ class CommandsCog(commands.Cog):
         embed = Embed(title="Queue Manager configuration", colour=0xffe400)
         # Archive channel
         try:
-            archive = context.guild.get_channel(configuration.archive_id).mention  # Raises AttributeError if not set.
-            if archive is None:
-                raise AttributeError
+            archive = configuration.archive.mention  # Raises AttributeError if None.
         except AttributeError:
             archive = f"Not yet defined. Use the `{PREFIX}archive` command in the channel you want to set as " \
                       f"archive channel"
         embed.add_field(name="Archive channel:", value=archive, inline=False)
 
         # Queue channels
-        queues = []
-        for q_id in configuration.queue_ids:
+        queues: Set[str] = set()
+        for q in configuration.queues:
             try:
-                queues.append(context.guild.get_channel(q_id).mention)
+                queues.add(q.mention)
             except AttributeError:
                 pass
-        queues = ", ".join(queues) or f"None defined. Use the `{PREFIX}queues` command to declare channels as queues."
-        embed.add_field(name="Queue channels:", value=queues, inline=False)
+        msg = ", ".join(queues) or f"None defined. Use the `{PREFIX}queues` command to declare channels as queues."
+        embed.add_field(name="Queue channels:", value=msg, inline=False)
 
         # Manager roles
-        roles = []
-        for r_id in configuration.role_ids:
+        roles: Set[str] = set()
+        for r in configuration.roles:
             try:
-                roles.append(context.guild.get_role(r_id).mention)
+                roles.add(r.mention)
             except AttributeError:
                 pass
-        roles = ", ".join(roles) or f"None defined. Use the `{PREFIX}roles` command to declare roles as managers."
-        embed.add_field(name="Queue Manager roles:", value=roles, inline=False)
+        msg = ", ".join(roles) or f"None defined. Use the `{PREFIX}roles` command to declare roles as managers."
+        embed.add_field(name="Queue Manager roles:", value=msg, inline=False)
         await context.send(embed=embed)
 
     @commands.command(name='reset')
@@ -140,7 +158,7 @@ class CommandsCog(commands.Cog):
         execute_query("DELETE FROM servers WHERE serverid = %s",
                       (str(context.guild.id),))
         try:
-            del self.client.server_confs[context.guild.id]  # Delete server configuration
+            del self.client.server_confs[context.guild]  # Delete server configuration
         except KeyError:
             pass
         embed = Embed(title="Server configuration reset", colour=0xffe400)
