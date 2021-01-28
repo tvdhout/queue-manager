@@ -1,4 +1,4 @@
-from typing import Set, Dict, Optional
+from typing import Set, Dict, Optional, Union
 import discord
 import asyncio
 from discord import Reaction, User, Member, Embed, Message, Guild, TextChannel, Role
@@ -8,7 +8,7 @@ from server_conf import ServerConfiguration
 from database_connection import execute_query
 from config import config
 
-RELEASE = False
+RELEASE = True
 TOKEN, PREFIX = config(release=RELEASE)
 
 
@@ -168,24 +168,26 @@ class QueueManager(commands.Bot):
         await message.add_reaction('📥')
         await self.process_commands(message)
 
-    async def on_reaction_add(self, reaction: Reaction, member: Member):
+    async def on_reaction_add(self, reaction: Reaction, member: Union[Member, User]):
         """
         Event handler. Triggers when a reaction is added to the message
         @param reaction: discord.Reaction: Reaction object
-        @param member: discord.Member: Member that added the reaction
+        @param member: discord.Member or discord.User: Member that added the reaction (Or User if in a DM)
         @return:
         """
-        if isinstance(member, User) or member == self.user:  # Reaction is in a DM, or the bot added the reaction
-            return
-        # Don't care about reaction in non-queue channels.
-        if reaction.message.channel not in self.get_queue_channels(reaction.message.guild):
-            return
-        if not self.is_manager(member):  # Not a manager
+        if not isinstance(member, Member) or member == reaction.message.guild.me or \
+                reaction.message.channel not in self.get_queue_channels(reaction.message.guild):
+            return  # Reaction is in a DM, or the bot added the reaction, or the reaction is not in a queue channel.
+        if not self.is_manager(member) and reaction.emoji != '📤':  # Not a manager
             await reaction.remove(member)
+            return
+        if reaction.emoji == '❌':
+            await reaction.message.delete()
             return
         if reaction.emoji == '📥':  # Manager clicked to claim this message.
             await reaction.message.clear_reactions()
             await reaction.message.add_reaction('📤')
+            await reaction.message.add_reaction('❌')
             result = execute_query("INSERT IGNORE INTO messages "
                                    "(messageid, ownerid) VALUES (%s, %s)",
                                    (str(reaction.message.id), str(member.id)),
@@ -195,6 +197,9 @@ class QueueManager(commands.Bot):
                 await asyncio.sleep(5)
                 await reply.delete()
         elif reaction.emoji == '📤':  # Manager clicked to archive this message.
+            if member != reaction.message.author and not self.is_manager(member):
+                await reaction.remove(member)
+                return
             result = execute_query("SELECT ownerid FROM messages WHERE messageid = %s",
                                    (str(reaction.message.id),),
                                    return_result=True)
