@@ -8,7 +8,7 @@ from server_conf import ServerConfiguration
 from database_connection import execute_query
 from config import config
 
-RELEASE = True
+RELEASE = False
 TOKEN, PREFIX = config(release=RELEASE)
 
 
@@ -28,7 +28,7 @@ class QueueManager(commands.Bot):
             self.server_confs[server] = ServerConfiguration(server)
         return self.server_confs[server]
 
-    def get_queue_channels(self, guild: Guild) -> Set[TextChannel]:
+    def oget_queue_channels(self, guild: Guild) -> Set[TextChannel]:
         """
         Get the channels that are declared as queues for this server.
         @param guild: discord.Guild: The server for which to retrieve the queue channels
@@ -87,6 +87,7 @@ class QueueManager(commands.Bot):
             await m.delete()
             return
 
+        # Create the embed to send in the archive channel
         author = message.author
         embed = Embed(title=f"Question by {author.display_name} ({author.name}#{author.discriminator}) in "
                             f"#{message.channel}",
@@ -95,17 +96,22 @@ class QueueManager(commands.Bot):
         embed.set_thumbnail(url=author.avatar_url)
         embed.add_field(name=f"{author.display_name}:", value=message.content, inline=False)
 
-        # Look for message chain to include.
-        async for m in message.channel.history(after=message, limit=25):  # Look in history from /message/ to now
+        # Look for relevant messages to include in the archive.
+        async for m in message.channel.history(after=message, limit=100):  # Look in history from `message` to now
+            if m.author == message.guild.me:  # Ignore the bot
+                continue
             if m.author == author:  # Add messages from the same user to the chain
                 embed.add_field(name=f"{m.author.display_name}:", value=m.content, inline=False)
                 await m.delete()
-            elif self.is_manager(m.author):  # Managers may interrupt, info may be useful, add to chain
+            elif m.reference is not None:  # Add messages that reply to the question's author
+                if isinstance(ref := m.reference.resolved, Message) and ref.author == author:
+                    embed.add_field(name=f"{m.author.display_name} replied:", value=m.content, inline=False)
+                    await m.delete()
+            elif author in m.mentions:
+                # Add messages that mention the author of the question
                 embed.add_field(name=f"{m.author.display_name}:", value=m.content, inline=False)
-            elif m.author == message.guild.me:
-                pass
-            else:
-                break
+                await m.delete()
+
         await message.delete()
         await channel.send(embed=embed)
 
@@ -150,13 +156,18 @@ class QueueManager(commands.Bot):
         if message.channel not in self.get_queue_channels(message.guild) or self.is_manager(message.author):
             await self.process_commands(message)
             return
+        if message.reference is not None:  # If this is a reply to a message it's not a new question
+            return
+        for mention in message.mentions:
+            if not self.is_manager(mention):  # Mentions another student, likely not a new question
+                return
 
         chain = False  # This is not the continuation of a previous message until proven otherwise
         async for prev_message in message.channel.history(limit=15):  # Look in message history for chain
             if prev_message == message:  # Don't look at the current message
                 continue
-            if prev_message.author == message.author:  # This is a continuation of a previous message.
-                chain = True
+            if prev_message.author == message.author:
+                chain = True  # This is a continuation of a previous message.
                 break
             member = message.guild.get_member(prev_message.author.id)
             if self.is_manager(member) or member == message.guild.me:
@@ -183,8 +194,14 @@ class QueueManager(commands.Bot):
             return
         if reaction.emoji == '❌':
             await reaction.message.delete()
+            execute_query("DELETE FROM messages WHERE messageid = %s", (str(reaction.message.id),))
             return
         if reaction.emoji == '📥':  # Manager clicked to claim this message.
+            if len(c := reaction.message.content) < 60 and 'voice' in c.lower():
+                await reaction.message.add_reaction()
+                await asyncio.sleep(2)
+                await reaction.message.delete()  # Not worthy of the archive
+                return
             await reaction.message.clear_reactions()
             await reaction.message.add_reaction('📤')
             await reaction.message.add_reaction('❌')
@@ -196,28 +213,29 @@ class QueueManager(commands.Bot):
                 reply = await reaction.message.reply(f"{member.mention} will answer your question.")
                 await asyncio.sleep(5)
                 await reply.delete()
-        elif reaction.emoji == '📤':  # Manager clicked to archive this message.
+        elif reaction.emoji == '📤':  # Manager or author clicked to archive this message.
             if member != reaction.message.author and not self.is_manager(member):
                 await reaction.remove(member)
                 return
-            result = execute_query("SELECT ownerid FROM messages WHERE messageid = %s",
-                                   (str(reaction.message.id),),
-                                   return_result=True)
-            try:
-                owner_id = result[0][0]
-            except IndexError:
-                await reaction.message.clear_reactions()
-                await reaction.message.add_reaction('📥')
-                return
-            if owner_id != str(member.id):  # If the manager did not claim the message they need to confirm.
-                await reaction.remove(member)
-                await reaction.message.add_reaction('✅')
-                await asyncio.sleep(4)
+            if member != reaction.message.author:
+                result = execute_query("SELECT ownerid FROM messages WHERE messageid = %s",
+                                       (str(reaction.message.id),),
+                                       return_result=True)
                 try:
-                    await reaction.message.remove_reaction('✅', self.user)  # They did not confirm.
-                except discord.errors.NotFound:  # They confirmed.
-                    pass
-                return
+                    owner_id = result[0][0]
+                except IndexError:
+                    await reaction.message.clear_reactions()
+                    await reaction.message.add_reaction('📥')
+                    return
+                if owner_id != str(member.id):  # If the manager did not claim the message they need to confirm.
+                    await reaction.remove(member)
+                    await reaction.message.add_reaction('✅')
+                    await asyncio.sleep(4)
+                    try:
+                        await reaction.message.remove_reaction('✅', self.user)  # They did not confirm.
+                    except discord.errors.NotFound:  # They confirmed.
+                        pass
+                    return
             await self.archive(reaction.message, reaction)
         elif reaction.emoji == '✅':
             await self.archive(reaction.message, reaction)
