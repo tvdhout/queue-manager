@@ -8,7 +8,7 @@ from server_conf import ServerConfiguration
 from database_connection import execute_query
 from config import config
 
-RELEASE = False
+RELEASE = True
 TOKEN, PREFIX = config(release=RELEASE)
 
 
@@ -28,7 +28,7 @@ class QueueManager(commands.Bot):
             self.server_confs[server] = ServerConfiguration(server)
         return self.server_confs[server]
 
-    def oget_queue_channels(self, guild: Guild) -> Set[TextChannel]:
+    def get_queue_channels(self, guild: Guild) -> Set[TextChannel]:
         """
         Get the channels that are declared as queues for this server.
         @param guild: discord.Guild: The server for which to retrieve the queue channels
