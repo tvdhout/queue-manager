@@ -3,6 +3,7 @@ import discord
 import asyncio
 from discord import Reaction, User, Member, Embed, Message, Guild, TextChannel, Role
 from discord.ext import commands
+import re
 
 from server_conf import ServerConfiguration
 from database_connection import execute_query
@@ -197,9 +198,11 @@ class QueueManager(commands.Bot):
             execute_query("DELETE FROM messages WHERE messageid = %s", (str(reaction.message.id),))
             return
         if reaction.emoji == '📥':  # Manager clicked to claim this message.
-            if len(c := reaction.message.content) < 60 and 'voice' in c.lower():
-                await reaction.message.add_reaction()
-                await asyncio.sleep(2)
+            if len(c := reaction.message.content) < 60 and \
+                    re.search(r'(voice|vc|channel|chat|v|in)\s*\d+', c.lower()) is not None:
+                await reaction.message.clear_reactions()
+                await reaction.message.add_reaction('👍')
+                await asyncio.sleep(3.5)
                 await reaction.message.delete()  # Not worthy of the archive
                 return
             await reaction.message.clear_reactions()
