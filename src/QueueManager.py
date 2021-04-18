@@ -199,10 +199,10 @@ class QueueManager(commands.Bot):
             return
         if reaction.emoji == '📥':  # Manager clicked to claim this message.
             if len(c := reaction.message.content) < 60 and \
-                    re.search(r'(voice|vc|channel|chat|v|in)\s*\d+', c.lower()) is not None:
+                    re.search(r'(voice|vc|channel|chat|v|inactivacti)\s*\d+', c.lower()) is not None:
                 await reaction.message.clear_reactions()
                 await reaction.message.add_reaction('👍')
-                await asyncio.sleep(3.5)
+                await asyncio.sleep(6)
                 await reaction.message.delete()  # Not worthy of the archive
                 return
             await reaction.message.clear_reactions()
